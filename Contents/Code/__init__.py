@@ -535,7 +535,7 @@ class TVDBAgent(Agent.TV_Shows):
     zip_archive = Archive.Zip(zip_data)
 
     # Extract the XML files from the archive. Work around corrupt XML.
-    root_el = XML.ElementFromString(self.fixBrokenXml(zip_archive[lang+'.xml']))
+    root_el = XML.ElementFromString(self.fixBrokenXml(zip_archive[lang+'.xml']), max_size=(1024 * 1024 * 10))  # 10 MB max size to accommodate long-running series with thousands of eps.
     actors_el = XML.ElementFromString(self.fixBrokenXml(zip_archive['actors.xml']))
     banners_el =XML.ElementFromString(self.fixBrokenXml(zip_archive['banners.xml']))
     
