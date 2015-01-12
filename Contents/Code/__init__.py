@@ -689,8 +689,6 @@ class TVDBAgent(Agent.TV_Shows):
           banner_url = banner_root + banner['thumb']
           
           valid_names.append(banner_name)
-
-          Log(banner_name)
                  
           # Find the attribute to add to based on the image type, checking that data doesn't
           # already exist before downloading
