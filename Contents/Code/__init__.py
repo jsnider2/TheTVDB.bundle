@@ -667,6 +667,7 @@ class TVDBAgent(Agent.TV_Shows):
           
           # Check that the language matches
           if (banner_lang != lang) and (banner_lang != 'en'):
+            Log('Skipping %s artwork due to language mismatch (section: %s, asset: %s)' % (banner_type, lang, banner_lang))
             return
             
           # Compute the banner name and prepare the data
