@@ -651,103 +651,101 @@ class TVDBAgent(Agent.TV_Shows):
       
     # Maintain a list of valid image names
     valid_names = list()
+
+    # Figure out which banners we're interested in (based on language) before fetching.
+    banner_types = {'series':0, 'season':0, 'poster':0, 'fanart':0}
+    banners = []
+    
+    for banner_type in banner_types:
+      all_banners = [self.parse_banner(b) for b in banners_el.xpath('Banner[contains(BannerType, "' + banner_type +'")]')]
+      
+      # Look for section language or English first.
+      wanted_banners = [b for b in all_banners if b['lang'] == lang or b['lang'] == 'en']
+      
+      # See if the rest were all the same language ("original" language, ostensibly) and add if so.
+      if len(wanted_banners) == 0:
+        other_langs = set([b['lang'] for b in all_banners if b['lang'] != lang or b['lang'] != 'en'])
+        if len(other_langs) == 1:
+          Log('Couldn\'t find %s artwork in section language (%s) or en, assuming %s is the original language and adding those instead.' % (banner_type, lang, ''.join(other_langs)))
+          wanted_banners = all_banners
+
+      banner_types[banner_type] = len(wanted_banners)
+      banners.extend(wanted_banners)
+    
+    Log('Fetching artwork: %d poster(s), %d series, %d season(s) %d fanart(s)' % (banner_types['poster'], banner_types['series'], banner_types['season'], banner_types['fanart']))
     
     @parallelize
     def DownloadImages():
 
       # Add a download task for each image
       i = 0
-      for banner_el in banners_el.xpath('Banner'):
+      for banner in banners:
         i += 1
         @task
-        def DownloadImage(metadata=metadata, banner_el=banner_el, i=i, valid_names=valid_names):
+        def DownloadImage(metadata=metadata, banner=banner, i=i, valid_names=valid_names):
 
-          # Parse the banner.
-          banner_type, banner_path, banner_lang, banner_thumb, proxy = self.parse_banner(banner_el)
-          
-          # Check that the language matches
-          if (banner_lang != lang) and (banner_lang != 'en'):
-            Log('Skipping %s artwork due to language mismatch (section: %s, asset: %s)' % (banner_type, lang, banner_lang))
-            return
-            
           # Compute the banner name and prepare the data
-          banner_name = banner_root + banner_path
-          banner_url = banner_root + banner_thumb
+          banner_name = banner_root + banner['path']
+          banner_url = banner_root + banner['thumb']
           
           valid_names.append(banner_name)
-          
-          def banner_data(path):
-            return GetResultFromNetwork(path, False)
-        
+
+          Log(banner_name)
+                 
           # Find the attribute to add to based on the image type, checking that data doesn't
           # already exist before downloading
-          if banner_type == 'fanart' and banner_name not in metadata.art:
-            try: metadata.art[banner_name] = proxy(banner_data(banner_url), sort_order=i)
-            except: pass
+          if banner['type'] == 'fanart' and banner_name not in metadata.art:
+            try: metadata.art[banner_name] = banner['proxy'](self.banner_data(banner_url), sort_order=i)
+            except Exception, e: Log(str(e))
 
-          elif banner_type == 'poster' and banner_name not in metadata.posters:
-            try: metadata.posters[banner_name] = proxy(banner_data(banner_url), sort_order=i)
-            except: pass
+          elif banner['type'] == 'poster' and banner_name not in metadata.posters:
+            try: metadata.posters[banner_name] = banner['proxy'](self.banner_data(banner_url), sort_order=i)
+            except Exception, e: Log(str(e))
 
-          elif banner_type == 'series':
+          elif banner['type'] == 'series':
             if banner_name not in metadata.banners:
-              try: metadata.banners[banner_name] = proxy(banner_data(banner_url), sort_order=i)
-              except: pass
+              try: metadata.banners[banner_name] = banner['proxy'](self.banner_data(banner_url), sort_order=i)
+              except Exception, e: Log(str(e))
 
-          elif banner_type == 'season':
-            banner_type_2 = el_text(banner_el, 'BannerType2')
-            season_num = el_text(banner_el, 'Season')
-            
-            # Need to check for date-based season (year) as well.
+          elif banner['type'] == 'season':
             try:
-              date_based_season = (int(season_num) + metadata.originally_available_at.year - 1)
+              date_based_season = (int(banner['season']) + metadata.originally_available_at.year - 1)
             except:
               date_based_season = None
             
-            if media is None or season_num in media.seasons or date_based_season in media.seasons:
-              if banner_type_2 == 'season' and banner_name not in metadata.seasons[season_num].posters:
-                try: metadata.seasons[season_num].posters[banner_name] = proxy(banner_data(banner_url), sort_order=i)
-                except: pass
+            if media is None or banner['season'] in media.seasons or date_based_season in media.seasons:
+              if banner['type_2'] == 'season' and banner_name not in metadata.seasons[banner['season']].posters:
+                try: metadata.seasons[banner['season']].posters[banner_name] = banner['proxy'](self.banner_data(banner_url), sort_order=i)
+                except Exception, e: Log(str(e))
 
-              elif banner_type_2 == 'seasonwide' and banner_name not in metadata.seasons[season_num].banners:
-                try: metadata.seasons[season_num].banners[banner_name] = proxy(banner_data(banner_url), sort_order=i)
-                except: pass
-            
-            else:
-              #Log('No media for season %s - skipping download of %s', season_num, banner_name)
-              pass
+              elif banner['type_2'] == 'seasonwide' and banner_name not in metadata.seasons[banner['season']].banners:
+                try: metadata.seasons[banner['season']].banners[banner_name] = banner['proxy'](self.banner_data(banner_url), sort_order=i)
+                except Exception, e: Log(str(e))
               
-    # Fallback to foreign art if localized art doesn't exist.
-    if len(metadata.art) == 0 and lang == 'en':
-      i = 0
-      for banner_el in banners_el.xpath('Banner'):
-        banner_type, banner_path, banner_lang, banner_thumb, proxy = self.parse_banner(banner_el)
-        banner_name = banner_root + banner_path
-        if banner_type == 'fanart' and banner_name not in metadata.art:
-          try: metadata.art[banner_name] = proxy(self.banner_data(banner_root + banner_thumb), sort_order=i)
-          except: pass
-          
     # Check each poster, background & banner image we currently have saved. If any of the names are no longer valid, remove the image 
     metadata.posters.validate_keys(valid_names)
     metadata.art.validate_keys(valid_names)
     metadata.banners.validate_keys(valid_names)
       
   def parse_banner(self, banner_el):
-    el_text = lambda element, xp: element.xpath(xp)[0].text if element.xpath(xp)[0].text else '' 
+    el_text = lambda element, xp: element.xpath(xp)[0].text if element.xpath(xp) else '' 
 
     # Get the image attributes from the XML
     banner_type = el_text(banner_el, 'BannerType')
     banner_path = el_text(banner_el, 'BannerPath')
-    try:
-      banner_thumb = el_text(banner_el, 'ThumbnailPath')
-      proxy = Proxy.Preview
-    except:
+    banner_thumb = el_text(banner_el, 'ThumbnailPath')
+    banner_lang = el_text(banner_el, 'Language')
+    banner_type_2 = el_text(banner_el, 'BannerType2')
+    season_num = el_text(banner_el, 'Season')
+
+    if len(banner_thumb) == 0:
       banner_thumb = banner_path
       proxy = Proxy.Media
-    banner_lang = el_text(banner_el, 'Language')
+    else:
+      proxy = Proxy.Preview
 
-    return (banner_type, banner_path, banner_lang, banner_thumb, proxy)
-  
+    return {'type':banner_type, 'path':banner_path, 'lang':banner_lang, 'thumb':banner_thumb, 'proxy':proxy, 'type_2':banner_type_2, 'season':season_num}
+
   def banner_data(self, path):
     return GetResultFromNetwork(path, False)
   
