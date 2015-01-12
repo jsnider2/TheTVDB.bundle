@@ -134,6 +134,8 @@ class TVDBAgent(Agent.TV_Shows):
           try:
             xml = XML.ElementFromString(GetResultFromNetwork(TVDB_SERIES_URL % (Dict['ZIP_MIRROR'], guid, lang)))
             name = xml.xpath('//Data/Series/SeriesName')[0].text
+            if 'series not permitted' in name.lower():
+              continue
             penalty += int(maxLevPenalty * (1 - self.lev_ratio(name,title)))
             try: year = xml.xpath('//Data/Series/FirstAired')[0].text.split('-')[0]
             except: year = None
@@ -438,12 +440,15 @@ class TVDBAgent(Agent.TV_Shows):
   def ParseSeries(self, media, el, lang, results, score):
     
     # Get attributes from the XML
+    series_name = el.xpath('SeriesName')[0].text
+    if not series_name or 'series not permitted' in series_name.lower():
+      return
+
     try:
       series_id = el.xpath('seriesid')[0].text
     except:
       series_id = el.xpath('id')[0].text
-      
-    series_name = el.xpath('SeriesName')[0].text
+
     try:
       series_year = el.xpath('FirstAired')[0].text[:4]
     except:
@@ -454,9 +459,6 @@ class TVDBAgent(Agent.TV_Shows):
     except:
       series_lang = lang
       
-    if not series_name:
-      return
-
     if not media.year:
       clean_series_name = series_name.replace('(' + str(series_year) + ')','').strip().lower()
     else:
