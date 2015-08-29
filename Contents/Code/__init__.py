@@ -494,8 +494,17 @@ class TVDBAgent(Agent.TV_Shows):
     # Add a result for this show
     results.Append(
       MetadataSearchResult(
-        id    = series_id,
-        name  = series_name,
+        id    = series_id + '-air',
+        name  = series_name + " (Aired Order)",
+        year  = series_year,
+        lang  = series_lang,
+        score = score+1
+      )
+    )
+    results.Append(
+      MetadataSearchResult(
+        id    = series_id + '-dvd',
+        name  = series_name + " (DVD Order)",
         year  = series_year,
         lang  = series_lang,
         score = score
@@ -529,6 +538,12 @@ class TVDBAgent(Agent.TV_Shows):
 
   def update(self, metadata, media, lang):
     Log("def update()")
+    m = re.search('^(.*)-(air|dvd)$',metadata.id);
+    if m:
+      metadata.id = m.group(1)
+      ordertype = m.group(2)
+    else:
+      ordertype = 'air'
     zip_url = TVDB_ZIP_URL % (Dict['ZIP_MIRROR'], metadata.id, lang)
     banner_root = TVDB_BANNER_URL % Dict['IMG_MIRROR']
     
@@ -587,8 +602,16 @@ class TVDBAgent(Agent.TV_Shows):
       for episode_el in root_el.xpath('Episode'):
         
         # Get the season and episode numbers
-        season_num = el_text(episode_el, 'SeasonNumber')
-        episode_num = el_text(episode_el, 'EpisodeNumber')
+        if ordertype == 'dvd':
+          try:
+            season_num = int(float(el_text(episode_el, 'DVD_season')))
+            episode_num = int(float(el_text(episode_el, 'DVD_episodenumber')))
+          except ValueError:
+            season_num = ''
+            episode_num = ''
+        else:
+          season_num = el_text(episode_el, 'SeasonNumber')
+          episode_num = el_text(episode_el, 'EpisodeNumber')
         
         if media is not None:
           # Also get the air date for date-based episodes.
